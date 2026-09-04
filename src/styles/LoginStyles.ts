@@ -111,5 +111,7 @@ export const loginStyles = StyleSheet.create({
   signupLink: {
     color: '#2563eb',
     fontWeight: '600',
+
+    
   },
 });
