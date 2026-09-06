@@ -222,7 +222,14 @@ export default function ProductsScreen() {
         <Pressable onPress={() => router.back()} style={styles.back}><Text style={styles.backText}>‹</Text></Pressable>
         <View style={styles.heading}><Text style={styles.title}>{isMerchant ? 'Manage Products' : 'Product'}</Text>{!isMerchant && <Text style={styles.breadcrumb}>Dashboard  /  Product</Text>}</View>
         {isMerchant && <Pressable onPress={() => router.navigate('/orders')} style={styles.ordersButton}><Text style={styles.ordersButtonText}>Manage Orders</Text></Pressable>}
-        {!isMerchant && <Pressable style={styles.addButton}><Text style={styles.addButtonText}>＋ Add Product</Text></Pressable>}
+        {!isMerchant && (
+  <Pressable
+    onPress={() => router.push('/add-product')}
+    style={styles.addButton}
+  >
+    <Text style={styles.addButtonText}>＋ Add Product</Text>
+  </Pressable>
+)}
       </View>
 
       <View style={[styles.panel, isMerchant && styles.merchantPanel]}>
