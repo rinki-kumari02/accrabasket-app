@@ -7,7 +7,7 @@ import { setAuthenticated } from '@/services/api';
 const actions = [
   { icon: '▦', title: 'Browse products', caption: 'Explore the latest items', color: '#E4F3E8', route: '/products' as const },
   { icon: '⌁', title: 'Manage orders', caption: 'View and update merchant orders', color: '#FFF1DA', route: '/orders' as const },
-  { icon: '♡', title: 'Saved items', caption: 'Return to your favourites', color: '#F6EAF1' },
+  { icon: '♡', title: 'Saved items', caption: 'Return to your favourites', color: '#F6EAF1', route: '/saved-items' as const },
   { icon: '◉', title: 'My account', caption: 'Details and preferences', color: '#E8EFF8' },
 ];
 

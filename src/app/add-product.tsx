@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     marginBottom: 26,
   },
 
-  /* IMAGE BOX - 50% WIDTH */
+  /* IMAGE BOX - 50% WIDTH */ 
   imageBox: {
     width: '50%',
     height: 220,

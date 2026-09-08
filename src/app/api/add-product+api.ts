@@ -7,7 +7,7 @@ export async function POST(request: Request) {
   const merchantParameters = JSON.stringify({
     method: 'add_product',
     ...body,
-  });
+  }); 
 
   try {
     const response = await fetch(addProductUrl, {
