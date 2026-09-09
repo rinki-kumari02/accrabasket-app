@@ -1,17 +1,18 @@
 {
   "expo": {
-    "name": "accrabasket-app",
-    "slug": "accrabasket-app",
+    "name": "admin-app",
+    "slug": "ravi",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "accrabasketapp",
+    "scheme": "crtupadminapp",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
-      "package": "com.accrabasket.adminapp",
+      "package": "com.crtup.adminapp",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,6 +39,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c45267d5-cf19-41bd-9d16-2a12ce10e8c2"
+      }
+    },
+    "owner": "crtup"
   }
 }
