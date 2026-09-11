@@ -4,21 +4,36 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Category, getAuthenticatedRoleId, getCategories, getMerchantMappingData, getProductListFilters, getProductListScrollOffset, getProductPage, MerchantOption, Product, ProductVariant, saveProductMerchantMapping, selectProductForEdit, setProductListFilters, setProductListScrollOffset } from '@/services/api';
+import { Category, getAuthenticatedRoleId, getCategories, getFavoriteProductIds, getMerchantMappingData, getProductListFilters, getProductListScrollOffset, getProductPage, MerchantOption, Product, ProductVariant, saveProductMerchantMapping, selectProductForEdit, setProductListFilters, setProductListScrollOffset, toggleFavoriteProduct } from '@/services/api';
 
 const PAGE_SIZE = 10;
 
 type ProductEntry = { product: Product; variant?: ProductVariant; rowKey: string };
 
-function ProductRow({ entry, index, categoryNames, onEdit, onMapMerchant, mappedCount, merchant }: { entry: ProductEntry; index: number; categoryNames: Record<number, string>; onEdit: (product: Product, variant?: ProductVariant) => void; onMapMerchant: (product: Product) => void; mappedCount: number; merchant: boolean }) {
+function ProductRow({ entry, index, categoryNames, onEdit, onMapMerchant, mappedCount, merchant, favorited, toggling, onToggleFavorite }: { entry: ProductEntry; index: number; categoryNames: Record<number, string>; onEdit: (product: Product, variant?: ProductVariant) => void; onMapMerchant: (product: Product) => void; mappedCount: number; merchant: boolean; favorited: boolean; toggling: boolean; onToggleFavorite: () => void }) {
   const { product, variant } = entry;
   const isActive = Number(variant?.status ?? product.status ?? 1) === 1;
+  const favoriteButton = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={favorited ? `Remove ${product.product_name} from saved items` : `Save ${product.product_name}`}
+      hitSlop={4}
+      disabled={toggling}
+      onPress={onToggleFavorite}
+      style={styles.favoriteButton}
+    >
+      {toggling
+        ? <ActivityIndicator size="small" color="#176B45" />
+        : <Text style={[styles.favoriteIcon, favorited && styles.favoriteIconActive]}>{favorited ? '♥' : '♡'}</Text>}
+    </Pressable>
+  );
 
   if (merchant) return (
     <View style={styles.merchantCard}>
       <View style={styles.merchantImageWrap}>{product.image_url ? <Image source={{ uri: product.image_url }} style={styles.productImage} contentFit="cover" transition={150} /> : <Text style={styles.merchantImageText}>{product.product_name.charAt(0).toUpperCase()}</Text>}</View>
       <View style={styles.merchantCopy}><Text style={styles.merchantProductName} numberOfLines={1}>{product.product_name}</Text><Text style={styles.merchantAttribute} numberOfLines={1}>{variant?.attribute_name || 'Standard item'}</Text><Text style={styles.merchantCategory} numberOfLines={1}>{product.category_id ? categoryNames[Number(product.category_id)] || `Category ${product.category_id}` : 'Uncategorised'}</Text></View>
       <View style={styles.merchantNumbers}><View style={styles.pricePill}><Text style={styles.pillLabel}>PRICE</Text><Text style={styles.priceValue}>{variant?.actual_price || (variant ? variant.price : product.price) || '—'}</Text></View><View style={[styles.stockPill, Number(variant?.stock || 0) <= 0 && styles.stockPillEmpty]}><Text style={styles.pillLabel}>STOCK</Text><Text style={[styles.stockValue, Number(variant?.stock || 0) <= 0 && styles.stockValueEmpty]}>{variant?.stock ?? '—'}</Text></View></View>
+      {favoriteButton}
       <Pressable onPress={() => onEdit(product, variant)} style={({ pressed }) => [styles.manageButton, pressed && styles.pressedButton]}><Text style={styles.manageButtonText}>Manage</Text><Text style={styles.manageArrow}>›</Text></Pressable>
     </View>
   );
@@ -39,6 +54,7 @@ function ProductRow({ entry, index, categoryNames, onEdit, onMapMerchant, mapped
         </View>
       </View>
       <View style={[styles.badge, !isActive && styles.inactiveBadge]}><Text style={[styles.badgeText, !isActive && styles.inactiveText]}>{isActive ? 'Active' : 'Inactive'}</Text></View>
+      {favoriteButton}
       <View style={styles.adminActions}><Pressable accessibilityRole="button" accessibilityLabel={`Map ${product.product_name} with merchants`} hitSlop={4} onPress={() => onMapMerchant(product)} style={({ pressed }) => [styles.mapButton, pressed && styles.actionPressed]}><Text style={styles.mapButtonIcon}>⇄</Text><Text style={styles.mapButtonText}>Map{mappedCount ? ` (${mappedCount})` : ''}</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Edit ${product.product_name}`} hitSlop={4} onPress={() => onEdit(product, variant)} style={({ pressed }) => [styles.editButton, styles.adminEditButton, pressed && styles.actionPressed]}><Text style={styles.editIcon}>✎</Text><Text style={styles.editText}>Edit</Text></Pressable></View>
     </View>
   );
@@ -67,6 +83,8 @@ export default function ProductsScreen() {
   const [mappingProduct, setMappingProduct] = useState<Product | null>(null);
   const [selectedMerchantIds, setSelectedMerchantIds] = useState<number[]>([]);
   const [savingMapping, setSavingMapping] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState<number[]>(() => getFavoriteProductIds());
+  const [togglingFavoriteIds, setTogglingFavoriteIds] = useState<Set<number>>(new Set());
   const loadingMoreRef = useRef(false);
   const activeFilterRef = useRef('');
   const scrollReadyRef = useRef(false);
@@ -141,6 +159,19 @@ export default function ProductsScreen() {
     if (isMerchant) return;
     getMerchantMappingData().then(({ merchants: list, mappings }) => { setMerchants(list); setMerchantMappings(mappings); }).catch(() => { setMerchants([]); });
   }, [isMerchant]);
+
+  const toggleFavorite = async (productId: number) => {
+    if (togglingFavoriteIds.has(productId)) return;
+    setTogglingFavoriteIds((current) => new Set(current).add(productId));
+    try {
+      const nowFavorited = await toggleFavoriteProduct(productId);
+      setFavoriteIds((current) => nowFavorited ? [...current, productId] : current.filter((id) => id !== productId));
+    } catch (reason) {
+      Alert.alert('Could not update saved items', reason instanceof Error ? reason.message : 'Please try again.');
+    } finally {
+      setTogglingFavoriteIds((current) => { const next = new Set(current); next.delete(productId); return next; });
+    }
+  };
 
   const openMerchantMapping = (product: Product) => {
     setMappingProduct(product);
@@ -268,7 +299,7 @@ export default function ProductsScreen() {
               ref={productListRef}
               data={filtered}
               keyExtractor={(item) => item.rowKey}
-              renderItem={({ item, index }) => <ProductRow entry={item} index={index + 1} categoryNames={categoryNames} onEdit={editProduct} onMapMerchant={openMerchantMapping} mappedCount={merchantMappings[item.product.product_id]?.length || 0} merchant={isMerchant} />}
+              renderItem={({ item, index }) => <ProductRow entry={item} index={index + 1} categoryNames={categoryNames} onEdit={editProduct} onMapMerchant={openMerchantMapping} mappedCount={merchantMappings[item.product.product_id]?.length || 0} merchant={isMerchant} favorited={favoriteIds.includes(item.product.product_id)} toggling={togglingFavoriteIds.has(item.product.product_id)} onToggleFavorite={() => toggleFavorite(item.product.product_id)} />}
               contentContainerStyle={isMerchant ? styles.merchantList : undefined}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { scrollReadyRef.current = false; void loadPage(1, false, true); }} />}
               ListEmptyComponent={<View style={styles.center}><Text style={styles.stateText}>No matching products found.</Text></View>}
@@ -313,7 +344,7 @@ const styles = StyleSheet.create({
   serial: { width: 25, textAlign: 'center' }, productColumn: { flex: 1.7, minWidth: 110 }, category: { flex: 1.1, minWidth: 76 }, quantity: { flex: 0.45, minWidth: 32, textAlign: 'center' }, unit: { flex: 0.55, minWidth: 40, textAlign: 'center' }, statusColumn: { flex: 0.75, minWidth: 64, alignItems: 'center' }, actionColumn: { flex: 0.7, minWidth: 56, alignItems: 'center', gap: 4 },
   price: { flex: 0.7, minWidth: 52, textAlign: 'center' }, stock: { flex: 0.6, minWidth: 46, textAlign: 'center' }, merchantAction: { width: 110, alignItems: 'center' },
   productCell: { flexDirection: 'row', alignItems: 'center' }, thumb: { width: 42, height: 42, borderRadius: 3, overflow: 'hidden', backgroundColor: '#E8F1F6', alignItems: 'center', justifyContent: 'center', marginRight: 8 }, productImage: { width: '100%', height: '100%' }, thumbText: { color: '#3C8DBC', fontWeight: '800' }, productCopy: { flex: 1 }, productName: { color: '#333', fontSize: 12, fontWeight: '700' }, productMeta: { color: '#999', fontSize: 9, marginTop: 3 },
-  badge: { backgroundColor: '#DFF0D8', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 2 }, badgeText: { color: '#3C763D', fontSize: 8, fontWeight: '700' }, inactiveBadge: { backgroundColor: '#F2DEDE' }, inactiveText: { color: '#A94442' }, adminActions: { width: 68, gap: 6, marginLeft: 7 }, mapButton: { height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E3F2E9', borderWidth: 1, borderColor: '#73B48E', paddingHorizontal: 7, borderRadius: 8 }, mapButtonIcon: { color: '#176B45', fontSize: 12, fontWeight: '900', marginRight: 3 }, mapButtonText: { color: '#176B45', fontSize: 10, fontWeight: '900' }, editButton: { backgroundColor: '#3C8DBC', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 2 }, adminEditButton: { height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#176B45' }, editIcon: { color: '#FFF', fontSize: 12, fontWeight: '900', marginRight: 4 }, editText: { color: '#FFF', fontSize: 10, fontWeight: '800' }, actionPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
+  badge: { backgroundColor: '#DFF0D8', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 2 }, badgeText: { color: '#3C763D', fontSize: 8, fontWeight: '700' }, inactiveBadge: { backgroundColor: '#F2DEDE' }, inactiveText: { color: '#A94442' }, favoriteButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', marginLeft: 6 }, favoriteIcon: { fontSize: 19, color: '#B7C4BC' }, favoriteIconActive: { color: '#C94A51' }, adminActions: { width: 68, gap: 6, marginLeft: 7 }, mapButton: { height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E3F2E9', borderWidth: 1, borderColor: '#73B48E', paddingHorizontal: 7, borderRadius: 8 }, mapButtonIcon: { color: '#176B45', fontSize: 12, fontWeight: '900', marginRight: 3 }, mapButtonText: { color: '#176B45', fontSize: 10, fontWeight: '900' }, editButton: { backgroundColor: '#3C8DBC', paddingHorizontal: 8, paddingVertical: 6, borderRadius: 2 }, adminEditButton: { height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#176B45' }, editIcon: { color: '#FFF', fontSize: 12, fontWeight: '900', marginRight: 4 }, editText: { color: '#FFF', fontSize: 10, fontWeight: '800' }, actionPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
   mappingModal: { width: '100%', maxWidth: 430, maxHeight: '76%', alignSelf: 'center', backgroundColor: '#FFF', borderRadius: 14, overflow: 'hidden' }, mappingHeader: { flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#E8EEEA' }, mappingHeading: { flex: 1 }, modalTitleCompact: { color: '#173E2D', fontSize: 17, fontWeight: '800' }, mappingProductName: { color: '#77877F', fontSize: 10, marginTop: 2 }, mappingClose: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 17, backgroundColor: '#F0F4F2' }, mappingCloseText: { color: '#506159', fontSize: 22, lineHeight: 24 }, merchantOption: { minHeight: 48, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F0F3F1' }, merchantOptionSelected: { backgroundColor: '#F1F9F4' }, mappingCheck: { width: 21, height: 21, borderWidth: 1.5, borderColor: '#B8C8C0', borderRadius: 6, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, mappingCheckSelected: { backgroundColor: '#176B45', borderColor: '#176B45' }, mappingCheckText: { color: '#FFF', fontSize: 12, fontWeight: '900' }, merchantOptionText: { color: '#4B5C53', fontSize: 13, fontWeight: '600' }, merchantOptionTextSelected: { color: '#176B45', fontWeight: '800' }, mappingEmpty: { color: '#7A8981', textAlign: 'center', padding: 30 }, mappingActions: { flexDirection: 'row', gap: 9, padding: 12, borderTopWidth: 1, borderTopColor: '#E8EEEA' }, mappingCancel: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#EEF2EF' }, mappingCancelText: { color: '#53645B', fontWeight: '800' }, mappingSave: { flex: 1.5, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#176B45' }, mappingSaveText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
   center: { flex: 1, minHeight: 220, alignItems: 'center', justifyContent: 'center', padding: 25 }, stateText: { color: '#777', fontSize: 12, textAlign: 'center', marginTop: 9 }, errorTitle: { color: '#333', fontSize: 17, fontWeight: '700' }, retry: { marginTop: 15, backgroundColor: '#3C8DBC', paddingHorizontal: 18, paddingVertical: 9, borderRadius: 3 }, retryText: { color: '#FFF', fontWeight: '700' },
   loadingMore: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18 }, loadingMoreText: { color: '#667', fontSize: 11, marginLeft: 9 }, endText: { color: '#999', fontSize: 10, textAlign: 'center', paddingVertical: 17 },

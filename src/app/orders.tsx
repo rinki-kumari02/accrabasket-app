@@ -13,9 +13,6 @@ const STATUSES = [
   ['partial_completed', 'Partially Completed'],
   ['dispatched', 'Dispatched'],
   ['completed', 'Completed'],
-  ['returned', 'Returned'],
-  ['cancelled', 'Cancelled'],
-  ['return_request', 'Return Request'],
 ] as const;
 
 function labelStatus(status: string) { return status.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()); }

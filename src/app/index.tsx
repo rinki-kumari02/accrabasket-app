@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { createAdminSession, isAuthenticated, loginApi, setAuthenticated, setAuthenticatedRoleId, setAuthenticatedUserId } from '@/services/api';
+import { createAdminSession, isAuthenticated, loginApi, setAuthenticated, setAuthenticatedRoleId, setAuthenticatedUserId, setAuthenticatedUserProfile } from '@/services/api';
 import { loginStyles as styles } from '@/styles/LoginStyles';
 
 export default function LoginScreen() {
@@ -33,6 +33,12 @@ export default function LoginScreen() {
         );
         setAuthenticatedRoleId(roleId);
         setAuthenticatedUserId(Number(user?.id || 0));
+        setAuthenticatedUserProfile({
+          firstName: user?.first_name,
+          username: user?.username,
+          email: user?.email,
+          phoneNumber: user?.phone_number,
+        });
         if (roleId !== 2) {
           await createAdminSession(user?.email || user?.username || cleanUsername, password, roleId);
         }

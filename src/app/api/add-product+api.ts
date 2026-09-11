@@ -1,9 +1,4 @@
-/*
- * Expo API routes run on the server, where request.formData() returns a
- * standard Web FormData/File. TypeScript infers React Native's client-side
- * FormData polyfill (uri-based, no .get()) here instead, so read it back
- * through the real shape it actually has at runtime.
- */
+
 type WebFormDataValue = string | File;
 type WebFormData = {
   get(name: string): WebFormDataValue | null;
@@ -14,10 +9,7 @@ export async function POST(request: Request) {
   try {
     const incomingFormData = (await request.formData()) as unknown as WebFormData;
 
-    /*
-     * Same admin session used by Edit Product
-     * (see src/app/api/product-save+api.ts).
-     */
+    
     const cookieHeader = request.headers.get('cookie') || '';
     const sessionMatch = cookieHeader.match(/(?:^|;\s*)accrabasket_admin=([^;]+)/);
 
@@ -40,19 +32,8 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * Old AccraBasket admin controller:
-     *
-     * Save Product
-     *      ↓
-     * admin/product/saveproduct
-     *      ↓
-     * empty "id" = create new product, non-empty "id" = update
-     *
-     * This is the exact same endpoint Edit Product already uses
-     * successfully (product-save+api.ts) — Add Product just posts
-     * it with an empty id and a product image attached.
-     */
+
+    
     const form = new FormData();
 
     form.set('id', '');
@@ -94,9 +75,7 @@ export async function POST(request: Request) {
       form.append('attribute_discount_value[]', String(discountValues[index] || ''));
     });
 
-    /*
-     * Product image(s) — forwarded as real multipart files, not base64.
-     */
+   
     for (const image of incomingFormData.getAll('product_img[]')) {
       if (image && typeof image !== 'string') {
         form.append('product_img[]', image, image.name || 'product.jpg');
@@ -108,10 +87,7 @@ export async function POST(request: Request) {
     console.log('BASKET API METHOD:', 'POST (admin saveproduct, empty id = add)');
     console.log('BASKET API URL:', apiUrl);
 
-    /*
-     * IMPORTANT: do not set Content-Type manually here either —
-     * fetch generates the correct multipart boundary for FormData.
-     */
+    
     const upstream = await fetch(apiUrl, {
       method: 'POST',
       headers: { Cookie: upstreamCookie },
@@ -132,12 +108,6 @@ export async function POST(request: Request) {
       );
     }
 
-    /*
-     * Success: the legacy controller redirects back to its HTML product
-     * page (redirect: 'manual' means we see that redirect status here
-     * rather than following it), so treat anything under 400 as success —
-     * same handling as product-save+api.ts.
-     */
     return Response.json({ status: 'success' });
   } catch (error) {
     console.log('ADD PRODUCT API ERROR:', error);

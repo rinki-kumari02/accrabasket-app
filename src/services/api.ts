@@ -26,6 +26,15 @@ let authenticatedRoleId = 0;
 let authenticatedUserId = 0;
 let authenticated = false;
 
+export type AuthenticatedUserProfile = {
+  firstName?: string;
+  username?: string;
+  email?: string;
+  phoneNumber?: string;
+};
+
+let authenticatedUserProfile: AuthenticatedUserProfile = {};
+
 export function setAuthenticated(value: boolean) {
   authenticated = value;
   if (Platform.OS === 'web') {
@@ -35,12 +44,14 @@ export function setAuthenticated(value: boolean) {
         sessionStorage.removeItem('accrabasket_authenticated');
         sessionStorage.removeItem('accrabasket_role_id');
         sessionStorage.removeItem('accrabasket_user_id');
+        sessionStorage.removeItem('accrabasket_user_profile');
       }
     } catch { /* unavailable */ }
   }
   if (!value) {
     authenticatedRoleId = 0;
     authenticatedUserId = 0;
+    authenticatedUserProfile = {};
   }
 }
 
@@ -83,6 +94,23 @@ export function getAuthenticatedUserId() {
     } catch { /* unavailable */ }
   }
   return authenticatedUserId;
+}
+
+export function setAuthenticatedUserProfile(profile: AuthenticatedUserProfile) {
+  authenticatedUserProfile = profile;
+  if (Platform.OS === 'web') {
+    try { sessionStorage.setItem('accrabasket_user_profile', JSON.stringify(profile)); } catch { /* unavailable */ }
+  }
+}
+
+export function getAuthenticatedUserProfile(): AuthenticatedUserProfile {
+  if (Platform.OS === 'web') {
+    try {
+      const stored = sessionStorage.getItem('accrabasket_user_profile');
+      if (stored) authenticatedUserProfile = JSON.parse(stored) as AuthenticatedUserProfile;
+    } catch { /* unavailable */ }
+  }
+  return authenticatedUserProfile;
 }
 
 export type ProductVariant = {
@@ -567,4 +595,102 @@ export async function getMerchantMappingData(): Promise<{ merchants: MerchantOpt
 
 export async function saveProductMerchantMapping(productId: number, merchantIds: number[]): Promise<void> {
   await adminMerchantMappingRequest('map', { productId, merchantIds });
+}
+
+/*
+ * Saved items / favourites.
+ *
+ * The AccraBasket backend this app already talks to (the admin controller
+ * plus the merchant basketapi "customer"/"product"/"index" controllers used
+ * above) has no wishlist/favourite endpoint — there is no
+ * addToWishlist/removeFromWishlist/wishlistList method anywhere in the
+ * upstream API. Until that endpoint exists on the backend, saved product ids
+ * are kept locally per signed-in user, using the same session-scoped pattern
+ * already used above for product list filters and scroll position. The
+ * saved products themselves are always resolved live through
+ * getProductPage() — the same product API the Products screen uses — so
+ * saved items are never dummy/static data.
+ */
+const FAVORITES_STORAGE_PREFIX = 'accrabasket_favorites_';
+let favoritesByUser: Record<number, number[]> = {};
+const favoritesInFlight = new Set<number>();
+
+function readFavoriteIds(userId: number): number[] {
+  if (Platform.OS === 'web') {
+    try {
+      const stored = sessionStorage.getItem(`${FAVORITES_STORAGE_PREFIX}${userId}`);
+      if (stored) return JSON.parse(stored) as number[];
+    } catch {
+      // Fall back to the in-memory copy below when storage is unavailable.
+    }
+  }
+  return favoritesByUser[userId] || [];
+}
+
+function writeFavoriteIds(userId: number, ids: number[]) {
+  favoritesByUser = { ...favoritesByUser, [userId]: ids };
+  if (Platform.OS === 'web') {
+    try { sessionStorage.setItem(`${FAVORITES_STORAGE_PREFIX}${userId}`, JSON.stringify(ids)); } catch {
+      // In-memory persistence still works when browser storage is unavailable.
+    }
+  }
+}
+
+export function getFavoriteProductIds(): number[] {
+  const userId = getAuthenticatedUserId();
+  if (!userId) return [];
+  return readFavoriteIds(userId);
+}
+
+export function isProductFavorited(productId: number): boolean {
+  return getFavoriteProductIds().includes(productId);
+}
+
+export function isFavoriteToggleBusy(productId: number): boolean {
+  return favoritesInFlight.has(productId);
+}
+
+export async function toggleFavoriteProduct(productId: number): Promise<boolean> {
+  const userId = getAuthenticatedUserId();
+  if (!userId) throw new Error('Please sign in to save products.');
+  if (favoritesInFlight.has(productId)) throw new Error('Please wait — this item is already being updated.');
+
+  favoritesInFlight.add(productId);
+  try {
+    const current = readFavoriteIds(userId);
+    const alreadyFavorited = current.includes(productId);
+    const next = alreadyFavorited ? current.filter((id) => id !== productId) : [...current, productId];
+    writeFavoriteIds(userId, next);
+    if (__DEV__) console.log('[favorites] toggled', { userId, productId, favorited: !alreadyFavorited });
+    return !alreadyFavorited;
+  } finally {
+    favoritesInFlight.delete(productId);
+  }
+}
+
+export async function getSavedProducts(): Promise<Product[]> {
+  const savedIds = getFavoriteProductIds();
+  if (!savedIds.length) return [];
+
+  const remaining = new Set(savedIds);
+  const found = new Map<number, Product>();
+  const limit = 50;
+  const maxPages = 40; // safety cap so a stale saved id can never spin this forever
+  let page = 1;
+
+  while (remaining.size > 0 && page <= maxPages) {
+    const { products, total } = await getProductPage({ page, limit });
+    for (const product of products) {
+      if (remaining.has(product.product_id)) {
+        found.set(product.product_id, product);
+        remaining.delete(product.product_id);
+      }
+    }
+    if (products.length < limit || page * limit >= total) break;
+    page += 1;
+  }
+
+  if (__DEV__) console.log('[favorites] resolved saved products', { requested: savedIds.length, resolved: found.size });
+
+  return savedIds.map((id) => found.get(id)).filter((product): product is Product => Boolean(product));
 }
